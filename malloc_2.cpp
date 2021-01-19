@@ -1,5 +1,6 @@
+#include <stdio.h>
+#include <string.h>
 #include <unistd.h>
-
 #include <iostream>
 
 #define MAX_SIZE 100000000
@@ -19,13 +20,28 @@ size_t _size_meta_data() {
     return (size_t)sizeof(struct MallocMetadata);
 }
 
+MallocMetadata* _get_meta_data_block(void* p) {
+    if (p == nullptr) {
+        return nullptr;
+    }
+    MallocMetadata* iter = dummy_pointer.next;
+    while (iter != &dummy_pointer) {
+        if (iter->user_pointer == p) {
+            return iter;
+        }
+        iter = iter->next;
+    }
+    return nullptr;
+}
+
 void print_meta_data(MallocMetadata* md) {  // for debugging
-    std::cout << "current: " << md << std::endl;
+    std::cout << "metadata pointer: " << md << std::endl;
     std::cout << md->size << std::endl;
     std::cout << md->is_free << std::endl;
-    std::cout << md->user_pointer << std::endl;
+    std::cout << "actual block pointer: " << md->user_pointer << std::endl;
     std::cout << "next: " << md->next << std::endl;
     std::cout << "prev :" << md->prev << std::endl;
+    std::cout << std::endl;
 }
 
 MallocMetadata* _get_first_free_block(size_t size) {
@@ -63,6 +79,7 @@ void* smalloc(size_t size) {
     MallocMetadata* first_free_block = _get_first_free_block(size);
     if (first_free_block != nullptr) {
         first_free_block->is_free = false;
+        print_meta_data(first_free_block);
         return first_free_block->user_pointer;
     }
     return _smalloc_aux(size);
@@ -149,19 +166,27 @@ void* srealloc(void* oldp, size_t size) {
         return smalloc(size);
     }
     MallocMetadata* meta_data_block = _get_meta_data_block(oldp);
-    if (size <<= meta_data_block->size) {
+    if (size <= meta_data_block->size) {
         return meta_data_block->user_pointer;
     }
+    void* smalloc_res = smalloc(size);
+    if (smalloc_res == nullptr) {
+        return nullptr;
+    }
+    if (memcpy(smalloc_res, oldp, meta_data_block->size) != 0) {
+        sfree(oldp);
+        return smalloc_res;
+    }
+    return nullptr;
 }
 
 int main() {
     int* num_ptr = (int*)smalloc(sizeof(int) * 100);
-    for (int i = 0; i < 10; i++) {
-        num_ptr[i] = i;
-        std::cout << num_ptr[i] << std::endl;
-    }
-    int* num_ptr2 = (int*)smalloc(sizeof(int) * 50);
-    int* num_ptr3 = (int*)smalloc(sizeof(int) * 50);
-
+    int* ptr2 = (int*)srealloc(num_ptr, 500);
+    int* ptr3 = (int*)srealloc(ptr2, 300);
+    int* ptr4 = (int*)scalloc(50, sizeof(int));
+    sfree(ptr3);
+    int* ptr5 = (int*)srealloc(ptr4, 250);
+    int* ptr6 = (int*)srealloc(nullptr, 1000);
     return 0;
 }
