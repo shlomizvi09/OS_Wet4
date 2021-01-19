@@ -185,18 +185,3 @@ void* srealloc(void* oldp, size_t size) {
     }
     return nullptr;
 }
-
-int main() {
-    int* ptr1 = (int*)smalloc(100);
-    int* ptr2 = (int*)smalloc(200);
-    int* ptr3 = (int*)smalloc(300);
-    int* ptr4 = (int*)smalloc(400);
-    int* ptr5 = (int*)smalloc(300);
-    print_meta_data();
-    std::cout << std::endl
-              << "############" << std::endl;
-    sfree(ptr3);
-    ptr1 = (int*)srealloc(ptr1, 500);
-    print_meta_data();
-    return 0;
-}
