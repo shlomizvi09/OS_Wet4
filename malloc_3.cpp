@@ -6,6 +6,7 @@
 
 #define MAX_SIZE 100000000
 #define SBRK_FAIL (void*)(-1)
+#define MINIMUM_REMAINDER 128  // Bytes
 
 struct MallocMetadata {
     size_t size;
@@ -14,6 +15,8 @@ struct MallocMetadata {
     MallocMetadata* next;
     MallocMetadata* prev;
 };
+
+MallocMetadata* _split_meta_data_block(MallocMetadata* old_meta_data_block, size_t wanted_size);
 
 MallocMetadata dummy_pointer = {0, false, nullptr, &dummy_pointer, &dummy_pointer};
 
@@ -84,10 +87,13 @@ void* smalloc(size_t size) {
     if (size == 0 || size > MAX_SIZE) {
         return nullptr;
     }
-    MallocMetadata* first_free_block = _get_first_free_block(size);
-    if (first_free_block != nullptr) {
-        first_free_block->is_free = false;
-        return first_free_block->user_pointer;
+    MallocMetadata* new_meta_data_block = _get_first_free_block(size);
+    if (new_meta_data_block != nullptr) {
+        new_meta_data_block->is_free = false;
+        if (new_meta_data_block->size >= size + _size_meta_data() + MINIMUM_REMAINDER) {
+            new_meta_data_block = _split_meta_data_block(new_meta_data_block, size);
+        }
+        return new_meta_data_block->user_pointer;
     }
     return _smalloc_aux(size);
 }
@@ -139,22 +145,22 @@ size_t _num_meta_data_bytes() {
 }
 
 void sfree(void* p) {
-    MallocMetadata* block_meta_data = _get_meta_data_block(p);
-    if (block_meta_data == nullptr || block_meta_data->is_free) {
+    MallocMetadata* meta_data_block = _get_meta_data_block(p);
+    if (meta_data_block == nullptr || meta_data_block->is_free) {
         return;
     }
-    block_meta_data->is_free = true;
+    meta_data_block->is_free = true;
 }
 
 void* scalloc(size_t num, size_t size) {
     if (size * num == 0 || size * num > MAX_SIZE) {
         return nullptr;
     }
-    MallocMetadata* first_free_block = _get_first_free_block(size * num);
-    if (first_free_block != nullptr) {
-        first_free_block->is_free = false;
-        memset(first_free_block->user_pointer, 0, first_free_block->size);
-        return first_free_block->user_pointer;
+    MallocMetadata* new_meta_data_block = _get_first_free_block(size * num);
+    if (new_meta_data_block != nullptr) {
+        new_meta_data_block->is_free = false;
+        memset(new_meta_data_block->user_pointer, 0, new_meta_data_block->size);
+        return new_meta_data_block->user_pointer;
     }
     void* result = _smalloc_aux(size * num);
     if (result == nullptr) {
@@ -184,4 +190,42 @@ void* srealloc(void* oldp, size_t size) {
         return smalloc_res;
     }
     return nullptr;
+}
+
+MallocMetadata* _split_meta_data_block(MallocMetadata* old_meta_data_block, size_t wanted_size) {
+    if (old_meta_data_block->size < wanted_size + _size_meta_data() + MINIMUM_REMAINDER) {
+        return nullptr;
+    }
+    size_t old_size = old_meta_data_block->size;
+    MallocMetadata* new_used_meta_data_block = old_meta_data_block;
+    new_used_meta_data_block->size = wanted_size;
+    new_used_meta_data_block->is_free = false;
+    new_used_meta_data_block->user_pointer = old_meta_data_block->user_pointer;
+
+    MallocMetadata* remainder_meta_data_block = (MallocMetadata*)((size_t)new_used_meta_data_block->user_pointer + new_used_meta_data_block->size);
+    remainder_meta_data_block->size = (int)(old_size - wanted_size - _size_meta_data());
+    remainder_meta_data_block->is_free = true;
+    remainder_meta_data_block->user_pointer = (void*)((size_t)new_used_meta_data_block->user_pointer + wanted_size + _size_meta_data());
+
+    remainder_meta_data_block->next = old_meta_data_block->next;
+    remainder_meta_data_block->prev = new_used_meta_data_block;
+    (old_meta_data_block->next)->prev = remainder_meta_data_block;
+    (old_meta_data_block->prev)->next = new_used_meta_data_block;
+    new_used_meta_data_block->next = remainder_meta_data_block;
+    new_used_meta_data_block->prev = old_meta_data_block->prev;
+
+    return new_used_meta_data_block;
+}
+
+int main() {
+    int* ptr1 = (int*)smalloc(150);
+    int* ptr2 = (int*)smalloc(1000);
+    sfree(ptr2);
+    int* ptr4 = (int*)smalloc(200);
+    print_meta_data();
+
+    ptr1 = (int*)srealloc(ptr1, 200);
+
+    print_meta_data();
+    return 0;
 }
