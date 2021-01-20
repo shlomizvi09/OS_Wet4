@@ -237,7 +237,7 @@ void* srealloc(void* oldp, size_t size) {
         MallocMetadata* new_meta_data_block = meta_data_block->prev;
         new_meta_data_block->next = meta_data_block->next;
         (meta_data_block->next)->prev = new_meta_data_block;
-        new_meta_data_block->size += meta_data_block->size + _size_meta_data();
+        new_meta_data_block->size = size;  // FIXME: need to make sure which size is the new_MD getting
         memcpy(new_meta_data_block->user_pointer, data_ptr, size_to_copy);
     }
     void* smalloc_res = smalloc(size);
