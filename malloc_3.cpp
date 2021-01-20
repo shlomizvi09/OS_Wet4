@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include <iostream>
@@ -11,6 +12,7 @@
 struct MallocMetadata {
     size_t size;
     bool is_free;
+    bool is_mmap;
     void* user_pointer;
     MallocMetadata* next;
     MallocMetadata* prev;
@@ -18,7 +20,8 @@ struct MallocMetadata {
 
 MallocMetadata* _split_meta_data_block(MallocMetadata* old_meta_data_block, size_t wanted_size);
 
-MallocMetadata dummy_pointer = {0, false, nullptr, &dummy_pointer, &dummy_pointer};
+MallocMetadata dummy_pointer = {0, false, false, nullptr, &dummy_pointer, &dummy_pointer};
+MallocMetadata mmap_dummy_pointer = {0, false, true, nullptr, &mmap_dummy_pointer, &mmap_dummy_pointer};
 
 size_t _size_meta_data() {
     return (size_t)sizeof(struct MallocMetadata);
@@ -75,6 +78,7 @@ void* _smalloc_aux(size_t size) {
     MallocMetadata* new_meta_data = (MallocMetadata*)block;
     new_meta_data->size = size;
     new_meta_data->is_free = false;
+    new_meta_data->is_mmap = false;
     new_meta_data->user_pointer = (void*)((size_t)block + _size_meta_data());
     new_meta_data->next = &dummy_pointer;
     new_meta_data->prev = dummy_pointer.prev;
@@ -144,12 +148,51 @@ size_t _num_meta_data_bytes() {
     return _num_allocated_blocks() * sizeof(struct MallocMetadata);
 }
 
+void _remove_meta_data_node_from_list(MallocMetadata* meta_data) {
+    if (meta_data == nullptr) {
+        return;
+    }
+    meta_data->next->prev = meta_data->prev;
+    meta_data->prev->next = meta_data->next;
+}
+
+void _merge_two_free_blocks(MallocMetadata* lower_block, MallocMetadata* upper_block) {
+    if (lower_block == nullptr || upper_block == nullptr) {
+        return;
+    }
+    lower_block->size += upper_block->size + _size_meta_data();
+    _remove_meta_data_node_from_list(upper_block);
+}
+
+void _free_mmapped_block(MallocMetadata* meta_data) {
+    MallocMetadata* next = meta_data->next;
+    MallocMetadata* prev = meta_data->prev;
+    if (munmap(meta_data, meta_data->size + _size_meta_data()) == -1) {  // munmap failed
+        return;
+    }
+    next->prev = prev;  // removing from mmap list
+    prev->next = next;  // removing from mmap list
+}
+
 void sfree(void* p) {
+    if (p == nullptr) {
+        return;
+    }
     MallocMetadata* meta_data_block = _get_meta_data_block(p);
     if (meta_data_block == nullptr || meta_data_block->is_free) {
         return;
     }
+    if (meta_data_block->is_mmap) {
+        _free_mmapped_block(meta_data_block);
+        return;
+    }
     meta_data_block->is_free = true;
+    if (meta_data_block->next != &dummy_pointer && meta_data_block->next->is_free) {  // merge with upper block
+        _merge_two_free_blocks(meta_data_block, meta_data_block->next);
+    }
+    if (meta_data_block->prev != &dummy_pointer && meta_data_block->prev->is_free) {  // merge with lower block
+        _merge_two_free_blocks(meta_data_block->prev, meta_data_block);
+    }
 }
 
 void* scalloc(size_t num, size_t size) {
