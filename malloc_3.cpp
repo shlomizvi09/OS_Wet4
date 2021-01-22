@@ -6,6 +6,7 @@
 #include <iostream>
 
 #define MAX_SIZE 100000000
+#define SIZE_FOR_MMAP 128000
 #define SBRK_FAIL (void*)(-1)
 #define MINIMUM_REMAINDER 128  // Bytes
 
@@ -45,6 +46,7 @@ MallocMetadata* _get_meta_data_block(void* p) {
 
 void print_meta_data() {  // for debugging
     MallocMetadata* md = dummy_pointer.next;
+    std::cout << "### sbrk allocated ###" << std::endl;
     while (md != &dummy_pointer) {
         std::cout << "metadata pointer: " << md << std::endl;
         std::cout << md->size << std::endl;
@@ -58,6 +60,41 @@ void print_meta_data() {  // for debugging
         std::cout << "prev :" << md->prev << std::endl;
         std::cout << std::endl;
         md = md->next;
+    }
+    md = mmap_dummy_pointer.next;
+    std::cout << std::endl;
+    std::cout << "### mmap allocated ###" << std::endl;
+    while (md != &mmap_dummy_pointer) {
+        std::cout << "metadata pointer: " << md << std::endl;
+        std::cout << md->size << std::endl;
+        if (md->is_free)
+            std::cout << "Free" << std::endl;
+        else
+            std::cout << "NOT Free" << std::endl;
+
+        std::cout << "actual block pointer: " << md->user_pointer << std::endl;
+        std::cout << "next: " << md->next << std::endl;
+        std::cout << "prev :" << md->prev << std::endl;
+        std::cout << std::endl;
+        md = md->next;
+    }
+}
+
+void _init_and_append_meta_data(MallocMetadata* new_meta_data, size_t size, bool is_mmap) {
+    new_meta_data->size = size;
+    new_meta_data->is_free = false;
+    new_meta_data->is_mmap = is_mmap;
+    new_meta_data->user_pointer = (void*)((size_t)new_meta_data + _size_meta_data());
+    if (is_mmap) {
+        new_meta_data->next = &mmap_dummy_pointer;
+        new_meta_data->prev = mmap_dummy_pointer.prev;
+        (mmap_dummy_pointer.prev)->next = new_meta_data;
+        mmap_dummy_pointer.prev = new_meta_data;
+    } else {
+        new_meta_data->next = &dummy_pointer;
+        new_meta_data->prev = dummy_pointer.prev;
+        (dummy_pointer.prev)->next = new_meta_data;
+        dummy_pointer.prev = new_meta_data;
     }
 }
 
@@ -78,20 +115,26 @@ void* _smalloc_aux(size_t size) {
         return nullptr;
     }
     MallocMetadata* new_meta_data = (MallocMetadata*)block;
-    new_meta_data->size = size;
-    new_meta_data->is_free = false;
-    new_meta_data->is_mmap = false;
-    new_meta_data->user_pointer = (void*)((size_t)block + _size_meta_data());
-    new_meta_data->next = &dummy_pointer;
-    new_meta_data->prev = dummy_pointer.prev;
-    (dummy_pointer.prev)->next = new_meta_data;
-    dummy_pointer.prev = new_meta_data;
+    _init_and_append_meta_data(new_meta_data, size, false);
+    return new_meta_data->user_pointer;
+}
+
+void* _alloc_with_mmap(size_t size) {
+    void* result = mmap(nullptr, size + _size_meta_data(), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    if (result == MAP_FAILED) {
+        return nullptr;
+    }
+    MallocMetadata* new_meta_data = (MallocMetadata*)result;
+    _init_and_append_meta_data(new_meta_data, size, true);
     return new_meta_data->user_pointer;
 }
 
 void* smalloc(size_t size) {
     if (size == 0 || size > MAX_SIZE) {
         return nullptr;
+    }
+    if (size >= SIZE_FOR_MMAP) {
+        return _alloc_with_mmap(size);
     }
     MallocMetadata* new_meta_data_block = _get_first_free_block(size);
     if (new_meta_data_block != nullptr) {
@@ -138,6 +181,11 @@ size_t _num_allocated_blocks() {
         counter++;
         iter = iter->next;
     }
+    iter = mmap_dummy_pointer.next;
+    while (iter != &mmap_dummy_pointer) {
+        counter++;
+        iter = iter->next;
+    }
     return counter;
 }
 
@@ -145,6 +193,11 @@ size_t _num_allocated_bytes() {
     size_t counter = 0;
     MallocMetadata* iter = dummy_pointer.next;
     while (iter != &dummy_pointer) {
+        counter += iter->size;
+        iter = iter->next;
+    }
+    iter = mmap_dummy_pointer.next;
+    while (iter != &mmap_dummy_pointer) {
         counter += iter->size;
         iter = iter->next;
     }
@@ -205,6 +258,9 @@ void sfree(void* p) {
 void* scalloc(size_t num, size_t size) {
     if (size * num == 0 || size * num > MAX_SIZE) {
         return nullptr;
+    }
+    if (size * num >= SIZE_FOR_MMAP) {
+        return _alloc_with_mmap(size * num);
     }
     MallocMetadata* new_meta_data_block = _get_first_free_block(size * num);
     if (new_meta_data_block != nullptr) {
