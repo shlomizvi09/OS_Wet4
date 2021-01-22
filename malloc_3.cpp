@@ -293,13 +293,13 @@ void* srealloc(void* oldp, size_t size) {
             meta_data_block = _split_meta_data_block(meta_data_block, size);
         }
         return meta_data_block->user_pointer;
-    } else if (meta_data_block->prev != &dummy_pointer && (meta_data_block->prev)->is_free && size <= meta_data_block->size + (meta_data_block->prev)->size + _size_meta_data()) {
+    }
+    if (meta_data_block->prev != &dummy_pointer && (meta_data_block->prev)->is_free && size <= meta_data_block->size + (meta_data_block->prev)->size + _size_meta_data()) {
         void* data_ptr = meta_data_block->user_pointer;
         size_t size_to_copy = meta_data_block->size;
         MallocMetadata* new_meta_data_block = meta_data_block->prev;
-        new_meta_data_block->next = meta_data_block->next;
-        (meta_data_block->next)->prev = new_meta_data_block;
         new_meta_data_block->size += meta_data_block->size + _size_meta_data();
+        _remove_meta_data_node_from_list(meta_data_block);
         memcpy(new_meta_data_block->user_pointer, data_ptr, size_to_copy);
         new_meta_data_block->is_free = false;
         MallocMetadata* temp_res = _split_meta_data_block(new_meta_data_block, size);
@@ -307,17 +307,35 @@ void* srealloc(void* oldp, size_t size) {
             new_meta_data_block = temp_res;
         }
         return new_meta_data_block->user_pointer;
-
-    } else if (meta_data_block->next != &dummy_pointer && (meta_data_block->next)->is_free && size <= meta_data_block->size + (meta_data_block->next)->size + _size_meta_data()) {
+    }
+    if (meta_data_block->next != &dummy_pointer && (meta_data_block->next)->is_free && size <= meta_data_block->size + (meta_data_block->next)->size + _size_meta_data()) {
         MallocMetadata* new_meta_data_block = meta_data_block;
-        new_meta_data_block->next = meta_data_block->next->next;
-        (meta_data_block->next->next)->prev = new_meta_data_block;
         new_meta_data_block->size += meta_data_block->next->size + _size_meta_data();
+        _remove_meta_data_node_from_list(meta_data_block->next);
         MallocMetadata* temp_res = _split_meta_data_block(new_meta_data_block, size);
         if (temp_res != nullptr) {
             new_meta_data_block = temp_res;
         }
         return new_meta_data_block->user_pointer;
+    }
+    if (meta_data_block->prev != &dummy_pointer && (meta_data_block->prev)->is_free && meta_data_block->next != &dummy_pointer && (meta_data_block->next)->is_free &&
+        size <= meta_data_block->size + (meta_data_block->prev)->size + (meta_data_block->next)->size + 2 * _size_meta_data()) {
+        void* data_ptr = meta_data_block->user_pointer;
+        size_t size_to_copy = meta_data_block->size;
+        MallocMetadata* new_meta_data_block = meta_data_block->prev;
+        new_meta_data_block->size += meta_data_block->size + (meta_data_block->next)->size + 2 * _size_meta_data();
+        _remove_meta_data_node_from_list(meta_data_block->next);
+        _remove_meta_data_node_from_list(meta_data_block);
+        memcpy(new_meta_data_block->user_pointer, data_ptr, size_to_copy);
+        new_meta_data_block->is_free = false;
+        MallocMetadata* temp_res = _split_meta_data_block(new_meta_data_block, size);
+        if (temp_res != nullptr) {
+            new_meta_data_block = temp_res;
+        }
+        return new_meta_data_block->user_pointer;
+    }
+    if (meta_data_block == _get_wilderness_chunk()) {
+        return _srealloc_wilderness_chunk(meta_data_block, size);
     }
     void* smalloc_res = smalloc(size);
     if (smalloc_res == nullptr) {
@@ -381,11 +399,13 @@ void* _srealloc_wilderness_chunk(MallocMetadata* wilderness_chunk, size_t size) 
 }
 
 int main() {
-    void* ptr2 = smalloc(100);
-    for (size_t i = 1; i <= 20; i++) {
-        sfree(ptr2);
-        ptr2 = smalloc(100 + 10 * i);
-    }
+    void* ptr1 = smalloc(100);
+    void* ptr2 = smalloc(200);
+    void* ptr3 = smalloc(300);
+    void* ptr4 = smalloc(400);
+    void* ptr5 = smalloc(500);
+    sfree(ptr3);
+    srealloc(ptr4, 700);
     print_meta_data();
     return 0;
 }
