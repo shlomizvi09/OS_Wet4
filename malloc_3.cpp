@@ -141,6 +141,11 @@ void* smalloc(size_t size) {
             new_meta_data_block = _split_meta_data_block(new_meta_data_block, size);
         }
         return new_meta_data_block->user_pointer;
+    } else {
+        MallocMetadata* wilderness_chunk = _get_wilderness_chunk();
+        if (wilderness_chunk != nullptr) {
+            return srealloc(wilderness_chunk, size);
+        }
     }
     return _smalloc_aux(size);
 }
@@ -278,17 +283,26 @@ void* srealloc(void* oldp, size_t size) {
     }
     MallocMetadata* meta_data_block = _get_meta_data_block(oldp);
     if (size <= meta_data_block->size) {
+        if (meta_data_block->size - size <= _size_meta_data() + MINIMUM_REMAINDER) {
+            meta_data_block = _split_meta_data_block(meta_data_block, size);
+        }
         return meta_data_block->user_pointer;
+    } else if (meta_data_block->prev != &dummy_pointer && (meta_data_block->prev)->is_free && size <= meta_data_block->size + (meta_data_block->prev)->size + _size_meta_data()) {
+        void* data_ptr = meta_data_block->user_pointer;
+        size_t size_to_copy = meta_data_block->size;
+        MallocMetadata* new_meta_data_block = meta_data_block->prev;
+        new_meta_data_block->next = meta_data_block->next;
+        (meta_data_block->next)->prev = new_meta_data_block;
+        new_meta_data_block->size = size;  // FIXME: need to make sure which size is the new_MD getting
+        memcpy(new_meta_data_block->user_pointer, data_ptr, size_to_copy);
     }
     void* smalloc_res = smalloc(size);
     if (smalloc_res == nullptr) {
         return nullptr;
     }
-    if (memcpy(smalloc_res, oldp, meta_data_block->size) != 0) {
-        sfree(oldp);
-        return smalloc_res;
-    }
-    return nullptr;
+    memcpy(smalloc_res, oldp, meta_data_block->size);
+    sfree(oldp);
+    return smalloc_res;
 }
 
 MallocMetadata* _split_meta_data_block(MallocMetadata* old_meta_data_block, size_t wanted_size) {
@@ -316,17 +330,28 @@ MallocMetadata* _split_meta_data_block(MallocMetadata* old_meta_data_block, size
     return new_used_meta_data_block;
 }
 
-int main() {
-    int* ptr1 = (int*)smalloc(150);
-    int* ptr2 = (int*)smalloc(1000);
-    sfree(ptr2);
-    int* ptr4 = (int*)smalloc(200);
-    print_meta_data();
-    int* ptr5 = (int*)smalloc(SIZE_FOR_MMAP * 3);
-    int* ptr6 = (int*)smalloc(SIZE_FOR_MMAP * 4);
-    sfree(ptr5);
-    print_meta_data();
+MallocMetadata* _get_wilderness_chunk() {
+    if (dummy_pointer.next == &dummy_pointer) {  // list is empty
+        return nullptr;
+    }
+    MallocMetadata* iter = dummy_pointer.next;
+    MallocMetadata* res = dummy_pointer.next;
+    while (iter != &dummy_pointer) {
+        if (iter->size > res->size) {
+            res = iter;
+        }
+        iter = iter->next;
+    }
+    return res;
+}
 
-    print_meta_data();
+int main() {
+    void* ptr1 = smalloc(1100);
+    void* ptr2 = smalloc(2000);
+    void* ptr3 = smalloc(350);
+    void* ptr4 = smalloc(450);
+
+    MallocMetadata* res = _get_wilderness_chunk();
+    std::cout << res->size << std::endl;
     return 0;
 }
