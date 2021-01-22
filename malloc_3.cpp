@@ -268,20 +268,7 @@ void* scalloc(size_t num, size_t size) {
     if (size * num == 0 || size * num > MAX_SIZE) {
         return nullptr;
     }
-    if (size * num >= SIZE_FOR_MMAP) {
-        return _alloc_with_mmap(size * num);
-    }
-    MallocMetadata* new_meta_data_block = _get_first_free_block(size * num);
-    if (new_meta_data_block != nullptr) {
-        new_meta_data_block->is_free = false;
-        memset(new_meta_data_block->user_pointer, 0, new_meta_data_block->size);
-        return new_meta_data_block->user_pointer;
-    }
-    MallocMetadata* wilderness_chunk = _get_wilderness_chunk();
-    if (wilderness_chunk != nullptr && wilderness_chunk->is_free) {
-        return _srealloc_wilderness_chunk(wilderness_chunk, size * num);
-    }
-    void* result = _smalloc_aux(size * num);
+    void* result = smalloc(size * num);
     if (result == nullptr) {
         return nullptr;
     }

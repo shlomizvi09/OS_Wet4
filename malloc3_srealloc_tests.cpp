@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <iostream>
+#include "malloc_3.cpp"
 
 //include your header file here
 //compile with g++ -g malloc3_srealloc_tests.cpp malloc_3.cpp -o sreallocTest
@@ -35,7 +36,7 @@ void malloc3_realloc_note_b_test(){
     sfree(first);
     char* third = (char *) srealloc(second,332);
     
-    assert(_num_allocated_bytes()  == 332);
+    assert(_num_allocated_bytes()  == 340);
     assert(_num_free_blocks() == 0);
     assert(_num_allocated_blocks() == 1);
     
@@ -52,7 +53,7 @@ void malloc3_realloc_note_c_test(){
     sfree(second);
     char* third = (char *) srealloc(first,332);
     
-    assert(_num_allocated_bytes()  == 332);
+    assert(_num_allocated_bytes()  == 340);
     assert(_num_free_blocks() == 0);
     assert(_num_allocated_blocks() == 1);
     
@@ -71,7 +72,7 @@ void malloc3_realloc_note_d_test(){
     sfree(third);
     srealloc(second,514);
     
-    assert(_num_allocated_bytes()  == 514);
+    assert(_num_allocated_bytes()  == 530);
     assert(_num_free_blocks() == 0);
     assert(_num_allocated_blocks() == 1);
     
@@ -93,7 +94,7 @@ void malloc3_realloc_note_e_test(){
     sfree(fourth);
     srealloc(second,600);
     
-    assert(_num_allocated_bytes()  == (1114));
+    assert(_num_allocated_bytes()  == (1130));
     assert(_num_free_blocks() == 1);
     assert(_num_allocated_blocks() == 2);
     
@@ -115,7 +116,7 @@ void malloc3_realloc_note_d2_test(){
     sfree(fourth);
     srealloc(second,1146);
     
-    assert(_num_allocated_bytes()  == 1146);
+    assert(_num_allocated_bytes()  == 1170);
     assert(_num_free_blocks() == 0);
     assert(_num_allocated_blocks() == 1);
     
@@ -141,12 +142,12 @@ void malloc3_realloc_note_f_test(){
 int main(){
 
 	//RUN ONLY ONE TEST AT A TIME!!!!!!!! ^_^ 
-    malloc3_realloc_note_a_test();
-    //malloc3_realloc_note_b_test();
-    //malloc3_realloc_note_c_test();
-    //malloc3_realloc_note_d_test();
-	//malloc3_realloc_note_d2_test();
-    //malloc3_realloc_note_e_test();
+    //malloc3_realloc_note_a_test();
+    // malloc3_realloc_note_b_test();
+    // malloc3_realloc_note_c_test();
+    // malloc3_realloc_note_d_test();
+	// malloc3_realloc_note_d2_test();
+    malloc3_realloc_note_e_test();
     //malloc3_realloc_note_f_test();
 
     return 0;
