@@ -19,9 +19,11 @@ struct MallocMetadata {
 };
 
 MallocMetadata* _split_meta_data_block(MallocMetadata* old_meta_data_block, size_t wanted_size);
-
+MallocMetadata* _get_wilderness_chunk();
+void* srealloc(void* oldp, size_t size);
 MallocMetadata dummy_pointer = {0, false, false, nullptr, &dummy_pointer, &dummy_pointer};
 MallocMetadata mmap_dummy_pointer = {0, false, true, nullptr, &mmap_dummy_pointer, &mmap_dummy_pointer};
+void* _srealloc_wilderness_chunk(MallocMetadata* wilderness_chunk, size_t size);
 
 size_t _size_meta_data() {
     return (size_t)sizeof(struct MallocMetadata);
@@ -100,8 +102,8 @@ void* smalloc(size_t size) {
         return new_meta_data_block->user_pointer;
     } else {
         MallocMetadata* wilderness_chunk = _get_wilderness_chunk();
-        if (wilderness_chunk != nullptr) {
-            return srealloc(wilderness_chunk, size);
+        if (wilderness_chunk != nullptr && wilderness_chunk->is_free) {
+            return _srealloc_wilderness_chunk(wilderness_chunk, size);
         }
     }
     return _smalloc_aux(size);
@@ -210,6 +212,10 @@ void* scalloc(size_t num, size_t size) {
         memset(new_meta_data_block->user_pointer, 0, new_meta_data_block->size);
         return new_meta_data_block->user_pointer;
     }
+    MallocMetadata* wilderness_chunk = _get_wilderness_chunk();
+    if (wilderness_chunk != nullptr && wilderness_chunk->is_free) {
+        return _srealloc_wilderness_chunk(wilderness_chunk, size * num);
+    }
     void* result = _smalloc_aux(size * num);
     if (result == nullptr) {
         return nullptr;
@@ -237,8 +243,25 @@ void* srealloc(void* oldp, size_t size) {
         MallocMetadata* new_meta_data_block = meta_data_block->prev;
         new_meta_data_block->next = meta_data_block->next;
         (meta_data_block->next)->prev = new_meta_data_block;
-        new_meta_data_block->size = size;  // FIXME: need to make sure which size is the new_MD getting
+        new_meta_data_block->size += meta_data_block->size + _size_meta_data();
         memcpy(new_meta_data_block->user_pointer, data_ptr, size_to_copy);
+        new_meta_data_block->is_free = false;
+        MallocMetadata* temp_res = _split_meta_data_block(new_meta_data_block, size);
+        if (temp_res != nullptr) {
+            new_meta_data_block = temp_res;
+        }
+        return new_meta_data_block->user_pointer;
+
+    } else if (meta_data_block->next != &dummy_pointer && (meta_data_block->next)->is_free && size <= meta_data_block->size + (meta_data_block->next)->size + _size_meta_data()) {
+        MallocMetadata* new_meta_data_block = meta_data_block;
+        new_meta_data_block->next = meta_data_block->next->next;
+        (meta_data_block->next->next)->prev = new_meta_data_block;
+        new_meta_data_block->size += meta_data_block->next->size + _size_meta_data();
+        MallocMetadata* temp_res = _split_meta_data_block(new_meta_data_block, size);
+        if (temp_res != nullptr) {
+            new_meta_data_block = temp_res;
+        }
+        return new_meta_data_block->user_pointer;
     }
     void* smalloc_res = smalloc(size);
     if (smalloc_res == nullptr) {
@@ -278,24 +301,35 @@ MallocMetadata* _get_wilderness_chunk() {
     if (dummy_pointer.next == &dummy_pointer) {  // list is empty
         return nullptr;
     }
-    MallocMetadata* iter = dummy_pointer.next;
     MallocMetadata* res = dummy_pointer.next;
-    while (iter != &dummy_pointer) {
-        if (iter->size > res->size) {
-            res = iter;
-        }
-        iter = iter->next;
+    while (res->next != &dummy_pointer) {
+        res = res->next;
     }
     return res;
 }
 
-int main() {
-    void* ptr1 = smalloc(1100);
-    void* ptr2 = smalloc(2000);
-    void* ptr3 = smalloc(350);
-    void* ptr4 = smalloc(450);
+void* _srealloc_wilderness_chunk(MallocMetadata* wilderness_chunk, size_t size) {
+    if (wilderness_chunk == nullptr) {
+        return nullptr;
+    }
+    if (wilderness_chunk->size >= size) {
+        return nullptr;
+    }
+    void* res = sbrk(size - wilderness_chunk->size);
+    if (res == SBRK_FAIL) {
+        return nullptr;
+    }
+    wilderness_chunk->size = size;
+    wilderness_chunk->is_free = false;
+    return wilderness_chunk->user_pointer;
+}
 
-    MallocMetadata* res = _get_wilderness_chunk();
-    std::cout << res->size << std::endl;
+int main() {
+    void* ptr2 = smalloc(100);
+    for (size_t i = 1; i <= 20; i++) {
+        sfree(ptr2);
+        ptr2 = scalloc(100 + 10 * i, 10);
+    }
+    print_meta_data();
     return 0;
 }
