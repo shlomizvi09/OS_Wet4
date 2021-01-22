@@ -384,7 +384,7 @@ int main() {
     void* ptr2 = smalloc(100);
     for (size_t i = 1; i <= 20; i++) {
         sfree(ptr2);
-        ptr2 = scalloc(100 + 10 * i, 10);
+        ptr2 = smalloc(100 + 10 * i);
     }
     print_meta_data();
     return 0;
