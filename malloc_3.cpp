@@ -1,3 +1,5 @@
+#include "malloc_3.hpp"
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -6,7 +8,7 @@
 #include <iostream>
 
 #define MAX_SIZE 100000000
-#define SIZE_FOR_MMAP 128000
+#define SIZE_FOR_MMAP 128 * 1024
 #define SBRK_FAIL (void*)(-1)
 #define MINIMUM_REMAINDER 128  // Bytes
 
@@ -21,7 +23,7 @@ struct MallocMetadata {
 
 MallocMetadata* _split_meta_data_block(MallocMetadata* old_meta_data_block, size_t wanted_size);
 MallocMetadata* _get_wilderness_chunk();
-void* srealloc(void* oldp, size_t size);
+// void* srealloc(void* oldp, size_t size);
 MallocMetadata dummy_pointer = {0, false, false, nullptr, &dummy_pointer, &dummy_pointer};
 MallocMetadata mmap_dummy_pointer = {0, false, true, nullptr, &mmap_dummy_pointer, &mmap_dummy_pointer};
 void* _srealloc_wilderness_chunk(MallocMetadata* wilderness_chunk, size_t size);
@@ -36,6 +38,13 @@ MallocMetadata* _get_meta_data_block(void* p) {
     }
     MallocMetadata* iter = dummy_pointer.next;
     while (iter != &dummy_pointer) {
+        if (iter->user_pointer == p) {
+            return iter;
+        }
+        iter = iter->next;
+    }
+    iter = mmap_dummy_pointer.next;
+    while (iter != &mmap_dummy_pointer) {
         if (iter->user_pointer == p) {
             return iter;
         }
@@ -289,7 +298,7 @@ void* srealloc(void* oldp, size_t size) {
     }
     MallocMetadata* meta_data_block = _get_meta_data_block(oldp);
     if (size <= meta_data_block->size) {
-        if (meta_data_block->size - size <= _size_meta_data() + MINIMUM_REMAINDER) {
+        if (meta_data_block->size - size >= _size_meta_data() + MINIMUM_REMAINDER) {
             meta_data_block = _split_meta_data_block(meta_data_block, size);
         }
         return meta_data_block->user_pointer;
@@ -398,14 +407,14 @@ void* _srealloc_wilderness_chunk(MallocMetadata* wilderness_chunk, size_t size) 
     return wilderness_chunk->user_pointer;
 }
 
-int main() {
-    void* ptr1 = smalloc(100);
-    void* ptr2 = smalloc(200);
-    void* ptr3 = smalloc(300);
-    void* ptr4 = smalloc(400);
-    void* ptr5 = smalloc(500);
-    sfree(ptr3);
-    srealloc(ptr4, 700);
-    print_meta_data();
-    return 0;
-}
+// int main() {
+//     void* ptr1 = smalloc(100);
+//     void* ptr2 = smalloc(200);
+//     void* ptr3 = smalloc(300);
+//     void* ptr4 = smalloc(400);
+//     void* ptr5 = smalloc(500);
+//     sfree(ptr3);
+//     srealloc(ptr4, 700);
+//     print_meta_data();
+//     return 0;
+// }
